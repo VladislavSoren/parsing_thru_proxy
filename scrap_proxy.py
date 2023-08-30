@@ -1,14 +1,12 @@
 from threading import Thread
 
-import pickle
-
 import pandas as pd
 import requests
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 
-from db_functions import create_table, get_table, insert_row
+from db_functions import create_table, get_table, insert_row, drop_table
 from functions_secondary import log_time, create_driver, get_parsing_indexes
 from log_pars_config import parsing_logger
 
@@ -27,13 +25,6 @@ def proxy_is_alive(proxy, timeout=5):
     return True
 
 
-def get_host_and_port():
-    pass
-
-
-# class ScrapWorker:
-
-
 def get_host_port(driver, index, timeout=5):
     host = WebDriverWait(driver, timeout).until(
         EC.presence_of_element_located(
@@ -49,13 +40,14 @@ def get_host_port(driver, index, timeout=5):
 def worker_scrap(
         website,
         worker_i, start_i, end_i,
-        name_db, name_table,
+        name_db, name_table,headless_mode,
         only_alive=True, stop_process=None
 ):
+    # timeouts
     timeout_proxy_parsing = 5
     timeout_alive_checking = 10
 
-    driver = create_driver()
+    driver = create_driver(headless_mode)
     driver.get(website)
 
     # Parsing proxies
@@ -78,13 +70,14 @@ def worker_scrap(
             insert_row(name_db, name_table, row)
             parsing_logger.info(f'{index} -- {proxy} is ALIVE in worker_{worker_i}')
 
-    # Закрываем драйвер
+    # close page and driver
     driver.close()
     driver.quit()
 
 
 @log_time(logger=parsing_logger)
-def scrap_proxy_selenium(website, total_proxies, count_of_workers, name_db, name_table):
+def scrap_proxy_selenium(website, total_proxies, count_of_workers, name_db, name_table,
+                         headless_mode):
     parsing_indexes = get_parsing_indexes(1, total_proxies + 1, count_of_workers)
 
     # Creation thread group
@@ -92,26 +85,26 @@ def scrap_proxy_selenium(website, total_proxies, count_of_workers, name_db, name
         website,
         worker_i,
         parsing_indexes[worker_i], parsing_indexes[worker_i + 1],
-        name_db, name_table))
+        name_db, name_table, headless_mode))
                for worker_i in range(count_of_workers)
                ]
 
-    # .........Запускаем потоки (начинаем нормализацию).........
+    # .........Starting threads.........
     for t in Threads:
         t.start()
 
-    # Проверяем живы ли потоки
+    # .........Check if threads are alive
     for t in Threads:
         if t.is_alive():
             parsing_logger.info(f'Thread №{t} ALIVE')
         else:
             parsing_logger.info(f'Thread №{t} DEAD')
 
-    # .................Ждём завершения всех потоков
+    # .........Waiting for all threads to complete
     for t in Threads:
         t.join()
 
-    # .................Проверяем завершение всех потоков
+    # .........Checking for all threads to complete
     for t in Threads:
         if t.is_alive():
             parsing_logger.info(f'Thread №{t} ALIVE')
@@ -127,16 +120,18 @@ if __name__ == '__main__':
     count_of_workers = 15
     name_db = 'facebook.db'
     name_table = 'proxies'
+    headless_mode = True
 
     # create table fo proxies
     proxies_df = pd.DataFrame({'worker_id': [], 'proxy_id': [], 'proxy': []})
     try:
         create_table(name_db, name_table, proxies_df)
     except ValueError:
-        pass
+        drop_table(name_db, name_table)
+        create_table(name_db, name_table, proxies_df)
 
-    status = scrap_proxy_selenium(website, total_proxies, count_of_workers, name_db, name_table)
+    status = scrap_proxy_selenium(website, total_proxies, count_of_workers, name_db, name_table,
+                                  headless_mode)
     if status: print('Ready!')
 
     proxies_df = get_table('facebook.db', 'proxies')
-    pass

@@ -14,18 +14,20 @@ def get_parsing_indexes(start_ind, end_ind, count_bot):
 
 
 # Функция получения драйвера по url страницы
-def create_driver(proxy=False):
+def create_driver(headless=True, proxy=False):
     # WEB_DRIVER_PATH = 'Drivers/geckodriver-v0.32.2-win-aarch64/geckodriver'  # Later in environment variable!
     WEB_DRIVER_PATH = 'Drivers/chromedriver/chromedriver'  # Later in environment variable!
     # options
     chrome_options = webdriver.ChromeOptions()
+    chrome_options.add_argument("window-size=1920,1080")
 
     # When the sandbox is disabled using the flag option --no-sandbox, websites or rendered pages
     # can potentially execute malicious Javascript based exploits on your computer.
     # chrome_options.add_argument('--no-sandbox')
 
     # browser window wouldn’t be visible
-    # chrome_options.add_argument('--headless')
+    if headless:
+        chrome_options.add_argument('--headless')
 
     # Only added when CI system environment variable is set or when inside a docker instance.
     # chrome_options.add_argument('--disable-dev-shm-usage')
