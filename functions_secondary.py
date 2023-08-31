@@ -7,7 +7,7 @@ from functools import wraps
 # Функция получения интервала range для парсинга (согласно данному range будут раздваться индексы воркерам(ботам))
 def get_parsing_indexes(start_ind, end_ind, count_bot):
     count_record = (end_ind - start_ind) + 1
-    print(count_record)
+    print(f'Количество записей для парсинга: {count_record}')
     part = count_record / count_bot
     part = math.ceil(part)
     return range(start_ind, start_ind + part * (count_bot + 1), part)
@@ -53,6 +53,30 @@ def create_driver(headless=True, proxy=False):
     driver = webdriver.Chrome(executable_path=WEB_DRIVER_PATH,
                               options=chrome_options)
     return driver
+
+
+def execute_threads(Threads, parsing_logger):
+    # .........Starting threads.........
+    for t in Threads:
+        t.start()
+
+    # .........Check if threads are alive
+    for t in Threads:
+        if t.is_alive():
+            parsing_logger.info(f'Thread №{t} ALIVE')
+        else:
+            parsing_logger.info(f'Thread №{t} DEAD')
+
+    # .........Waiting for all threads to complete
+    for t in Threads:
+        t.join()
+
+    # .........Checking for all threads to complete
+    for t in Threads:
+        if t.is_alive():
+            parsing_logger.info(f'Thread №{t} ALIVE')
+        else:
+            parsing_logger.info(f'Thread №{t} DEAD')
 
 
 # Функция декоратор замера времени выполнения функции

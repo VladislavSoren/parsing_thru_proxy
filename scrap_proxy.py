@@ -2,12 +2,13 @@ from threading import Thread
 
 import pandas as pd
 import requests
+from bs4 import BeautifulSoup
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 
 from db_functions import create_table, get_table, insert_row, drop_table
-from functions_secondary import log_time, create_driver, get_parsing_indexes
+from functions_secondary import log_time, create_driver, get_parsing_indexes, execute_threads
 from log_pars_config import parsing_logger
 
 
@@ -25,44 +26,34 @@ def proxy_is_alive(proxy, timeout=5):
     return True
 
 
-def get_host_port(driver, index, timeout=5):
-    host = WebDriverWait(driver, timeout).until(
+def get_proxies_list(driver):
+    users_block_obj = WebDriverWait(driver, 10).until(
         EC.presence_of_element_located(
-            (By.XPATH, f'/html/body/section[1]/div/div[2]/div/table/tbody/tr[{index}]/td[1]'))
-    ).text
-    port = WebDriverWait(driver, timeout).until(
-        EC.presence_of_element_located(
-            (By.XPATH, f'/html/body/section[1]/div/div[2]/div/table/tbody/tr[{index}]/td[2]'))
-    ).text
-    return host, port
+            (By.TAG_NAME, 'body')))
+
+    users_block_HTML = users_block_obj.get_attribute('innerHTML')
+    bsObj = BeautifulSoup(users_block_HTML, 'html.parser')
+
+    proxies_str = bsObj.textarea.text.split('\n\n')[1].strip('\n')
+    proxies_list = proxies_str.split('\n')
+
+    return proxies_list
 
 
-def worker_scrap(
-        website,
+def worker_check_and_save_proxies(
+        proxies_list,
         worker_i, start_i, end_i,
-        name_db, name_table,headless_mode,
+        timeout_alive_checking,
         only_alive=True, stop_process=None
 ):
-    # timeouts
-    timeout_proxy_parsing = 5
-    timeout_alive_checking = 10
-
-    driver = create_driver(headless_mode)
-    driver.get(website)
-
-    # Parsing proxies
+    # checking proxies
     for index in range(start_i, end_i):
-
-        print(index)
+        proxy = proxies_list[index]
 
         # Condition of stopping parser
         if (stop_process == worker_i) or (stop_process == 'stop_all'):
             parsing_logger.info(f'!!!!!!!___w_{worker_i} ОСТАНОВЛЕН!!!')
             break
-
-        # receiving host and port (proxy)
-        host, port = get_host_port(driver, index, timeout=timeout_proxy_parsing)
-        proxy = ':'.join([host, port])
 
         # add alive proxy to bd
         if only_alive and proxy_is_alive(proxy, timeout=timeout_alive_checking):
@@ -70,46 +61,33 @@ def worker_scrap(
             insert_row(name_db, name_table, row)
             parsing_logger.info(f'{index} -- {proxy} is ALIVE in worker_{worker_i}')
 
-    # close page and driver
-    driver.close()
-    driver.quit()
-
 
 @log_time(logger=parsing_logger)
-def scrap_proxy_selenium(website, total_proxies, count_of_workers, name_db, name_table,
-                         headless_mode):
-    parsing_indexes = get_parsing_indexes(1, total_proxies + 1, count_of_workers)
+def scrap_proxies():
+    timeout_alive_checking = 10
+
+    driver = create_driver(headless_mode)
+    driver.get(website)
+
+    proxies_list = get_proxies_list(driver)
+
+    # get indexes for workers (0 - first index of list, "total_proxies - 1" - for proper count)
+    parsing_indexes = get_parsing_indexes(0, total_proxies - 1, count_of_workers)
 
     # Creation thread group
-    Threads = [Thread(target=worker_scrap, args=(
-        website,
+    Threads = [Thread(target=worker_check_and_save_proxies, args=(
+        proxies_list,
         worker_i,
         parsing_indexes[worker_i], parsing_indexes[worker_i + 1],
-        name_db, name_table, headless_mode))
+        timeout_alive_checking,
+        name_db, name_table, parsing_logger))
                for worker_i in range(count_of_workers)
                ]
 
-    # .........Starting threads.........
-    for t in Threads:
-        t.start()
+    execute_threads(Threads, parsing_logger)
 
-    # .........Check if threads are alive
-    for t in Threads:
-        if t.is_alive():
-            parsing_logger.info(f'Thread №{t} ALIVE')
-        else:
-            parsing_logger.info(f'Thread №{t} DEAD')
-
-    # .........Waiting for all threads to complete
-    for t in Threads:
-        t.join()
-
-    # .........Checking for all threads to complete
-    for t in Threads:
-        if t.is_alive():
-            parsing_logger.info(f'Thread №{t} ALIVE')
-        else:
-            parsing_logger.info(f'Thread №{t} DEAD')
+    driver.close()
+    driver.quit()
 
     return 'Ready'
 
@@ -117,9 +95,10 @@ def scrap_proxy_selenium(website, total_proxies, count_of_workers, name_db, name
 if __name__ == '__main__':
     website = 'https://free-proxy-list.net/'
     total_proxies = 300
-    count_of_workers = 15
+    count_of_workers = 30
     name_db = 'facebook.db'
     name_table = 'proxies'
+    with_workers = False
     headless_mode = True
 
     # create table fo proxies
@@ -130,8 +109,7 @@ if __name__ == '__main__':
         drop_table(name_db, name_table)
         create_table(name_db, name_table, proxies_df)
 
-    status = scrap_proxy_selenium(website, total_proxies, count_of_workers, name_db, name_table,
-                                  headless_mode)
+    status = scrap_proxies()
     if status: print('Ready!')
 
     proxies_df = get_table('facebook.db', 'proxies')
