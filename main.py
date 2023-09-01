@@ -20,6 +20,11 @@ from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())  # погрузка .env
 
 
+class StatusClass:
+    Success = 'Success'
+    Failed = 'Failed'
+
+
 def fill_field(driver, by, name, value):
     email_field = driver.find_element(by, name)
     email_field.clear()
@@ -95,8 +100,6 @@ def scroll_to_end_of_the_page(driver, scroll_timeout_minute=1):
 
         # Scroll down
         scroll_and_wait(driver, SCROLL_PAUSE_TIME)
-        scroll_and_wait(driver, SCROLL_PAUSE_TIME)
-        scroll_and_wait(driver, SCROLL_PAUSE_TIME)
 
         # Calculate new scroll height and compare with last scroll height
         new_height = driver.execute_script("return document.body.scrollHeight")
@@ -168,8 +171,6 @@ def get_users_info(login_url, target_url, headless_mode):
     driver.close()
     driver.quit()
 
-    return '_______completed successfully_______'
-
 
 if __name__ == '__main__':
     FACEBOOK_EMAIL = os.getenv('FACEBOOK_EMAIL')
@@ -186,16 +187,14 @@ if __name__ == '__main__':
     status = None
     for _ in range(10):
         try:
-            status = get_users_info(LOGIN_URL, target_url, headless_mode=False)
-            print(status)
+            get_users_info(LOGIN_URL, target_url, headless_mode=False)
+            print(StatusClass.Success)
         except:
-            time.sleep(15)
+            print(StatusClass.Failed)
+            time.sleep(5)
             continue
-
-        if status == '_______completed successfully_______':
+        else:
             users_info_df = get_table(name_db, name_table)
             print(users_info_df)
             print(f'Number of users in table: {users_info_df}')
             break
-        else:
-            print('_______table is not created_______')
